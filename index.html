@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Planer Tygodnia (24h)</title>
+  
+  <link rel="stylesheet" href="css/style.css">
+  
+  <!-- Zewnętrzna biblioteka do eksportu grafiki -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+  
+  <!-- Skrypty aplikacji -->
+  <script src="js/config.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+
+  <!-- Główny nagłówek strony -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon" aria-hidden="true">✓</div>
+      <div>
+        <h1 class="brand-title">Planer Tygodnia (24h)</h1>
+        <p class="brand-subtitle" id="currentWeekRange">Tydzień: ...</p>
+      </div>
+    </div>
+    
+    <nav class="controls" aria-label="Nawigacja i akcje kalendarza">
+      <button type="button" class="btn" id="prevWeekBtn">◀ Poprzedni</button>
+      <button type="button" class="btn" id="todayBtn">Dzisiaj</button>
+      <button type="button" class="btn" id="nextWeekBtn">Następny ▶</button>
+      
+      <div class="sync-status" id="syncStatus" role="status" aria-live="polite">🔄 Łączenie...</div>
+
+      <button type="button" class="btn" id="openCategoriesBtn">🏷️ Kategorie</button>
+      <button type="button" class="btn btn-export" id="openExportBtn">📸 Pobierz PNG</button>
+      <button type="button" class="btn btn-auth" id="openAuthBtn">🔑 Klucze / Wyloguj</button>
+      <button type="button" class="btn btn-primary" id="openAddModalBtn">+ Dodaj wpis</button>
+    </nav>
+  </header>
+
+  <!-- Główny kontener siatki kalendarza -->
+  <main class="schedule-wrapper">
+    <div class="schedule-grid" id="grid"></div>
+  </main>
+
+  <!-- Niewidoczny kontener do renderingu PNG w pełnym wymiarze 1920px (Desktop) -->
+  <div id="exportOffscreenContainer" aria-hidden="true"></div>
+
+  <!-- MODAL: Logowanie i klucze API -->
+  <div class="modal-backdrop" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+    <div class="modal">
+      <h2 id="authModalTitle">Logowanie do bazy chmury (JSONBin)</h2>
+      <p class="modal-desc">
+        Klucze zapisują się wyłącznie w pamięci podręcznej Twojej przeglądarki i nie trafiają do kodu publicznego repozytorium GitHub.
+      </p>
+
+      <form id="authForm">
+        <div class="form-group">
+          <label for="authBinId">Login (Twój BIN_ID):</label>
+          <input type="text" id="authBinId" placeholder="*****************" autocomplete="off" required>
+        </div>
+
+        <div class="form-group">
+          <label for="authApiKey">Hasło (Twój API Master Key):</label>
+          <input type="password" id="authApiKey" placeholder="*****************" autocomplete="off" required>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-danger" id="logoutBtn" style="margin-right:auto;">Wyloguj / Wyczyść</button>
+          <button type="button" class="btn" id="closeAuthBtn">Anuluj</button>
+          <button type="submit" class="btn btn-primary">Zaloguj i połącz</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Eksport grafiki PNG -->
+  <div class="modal-backdrop" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
+    <div class="modal">
+      <h2 id="exportModalTitle">Pobierz grafikę tygodnia (PNG)</h2>
+      <p class="modal-desc">
+        Generuje panoramiczny obraz w układzie stacjonarnym PC (1920px), nawet jeśli pobierasz go z telefonu.
+      </p>
+
+      <div class="form-group">
+        <label for="exportTargetDate">Wybierz dzień z tygodnia do pobrania:</label>
+        <input type="date" id="exportTargetDate">
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn" id="closeExportBtn">Anuluj</button>
+        <button type="button" class="btn btn-primary" id="startExportBtn">📸 Pobierz plik PNG</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Dodawanie / Edycja wpisu -->
+  <div class="modal-backdrop" id="eventModal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle">
+    <div class="modal">
+      <h2 id="eventModalTitle">Dodaj wpis</h2>
+      
+      <form id="eventForm">
+        <input type="hidden" id="eventId">
+
+        <div class="form-group">
+          <label for="eventTitle">Nazwa</label>
+          <input type="text" id="eventTitle" placeholder="np. InGroupe Night, Dyżur" required>
+        </div>
+
+        <div class="form-group">
+          <label for="eventInfo">Informacje (opcjonalnie)</label>
+          <input type="text" id="eventInfo" placeholder="np. Sala 201 • Online">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-wide">
+            <label for="eventStartDate">Dzień rozpoczęcia (Dzień X)</label>
+            <input type="date" id="eventStartDate" required>
+          </div>
+          <div class="form-group">
+            <label for="eventStartTime">Godzina startu</label>
+            <input type="time" id="eventStartTime" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-wide">
+            <label for="eventEndDate">Dzień zakończenia (Dzień Y)</label>
+            <input type="date" id="eventEndDate" required>
+          </div>
+          <div class="form-group">
+            <label for="eventEndTime">Godzina końca</label>
+            <input type="time" id="eventEndTime" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="eventCategorySelect">Kategoria</label>
+          <select id="eventCategorySelect" required></select>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-danger" id="deleteEventBtn" style="margin-right:auto; display:none;">Usuń</button>
+          <button type="button" class="btn" id="closeEventModalBtn">Anuluj</button>
+          <button type="submit" class="btn btn-primary">Zapisz</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Zarządzanie kategoriami -->
+  <div class="modal-backdrop" id="categoriesModal" role="dialog" aria-modal="true" aria-labelledby="categoriesModalTitle">
+    <div class="modal">
+      <h2 id="categoriesModalTitle">Zarządzaj Kategoriami</h2>
+      
+      <div class="category-list" id="categoriesContainer"></div>
+      
+      <hr class="divider">
+      
+      <h3 class="section-title">Dodaj nową kategorię</h3>
+      <form id="newCategoryForm" class="form-row">
+        <div class="form-group flex-wide">
+          <label for="newCategoryName">Nazwa kategorii</label>
+          <input type="text" id="newCategoryName" placeholder="np. Trening, Spotkanie" required>
+        </div>
+        <div class="form-group">
+          <label for="newCategoryColor">Kolor</label>
+          <input type="color" id="newCategoryColor" class="color-input" value="#3b82f6">
+        </div>
+        <div class="form-group align-end">
+          <button type="submit" class="btn btn-primary">+ Dodaj</button>
+        </div>
+      </form>
+
+      <div class="modal-actions">
+        <button type="button" class="btn" id="closeCategoriesBtn">Zamknij</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
