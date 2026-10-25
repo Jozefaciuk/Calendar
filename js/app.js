@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const exportModal = document.getElementById('exportModal');
   const eventModal = document.getElementById('eventModal');
   const categoriesModal = document.getElementById('categoriesModal');
+  const summaryModal = document.getElementById('summaryModal');
 
   // Formularze
   const authForm = document.getElementById('authForm');
@@ -59,6 +60,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openCategoriesBtn').addEventListener('click', openCategoriesModal);
     document.getElementById('closeCategoriesBtn').addEventListener('click', closeCategoriesModal);
     newCategoryForm.addEventListener('submit', handleNewCategory);
+
+    document.getElementById('openSummaryBtn').addEventListener('click', openSummaryModal);
+    document.getElementById('closeSummaryBtn').addEventListener('click', closeSummaryModal);
+    document.getElementById('summaryPrevBtn').addEventListener('click', () => shiftSummaryMonth(-1));
+    document.getElementById('summaryNextBtn').addEventListener('click', () => shiftSummaryMonth(1));
+    document.getElementById('summaryMonth').addEventListener('change', applySummaryMonth);
+    document.getElementById('summaryFrom').addEventListener('change', handleSummaryRangeChange);
+    document.getElementById('summaryTo').addEventListener('change', handleSummaryRangeChange);
   }
 
   // --- Funkcje pomocnicze daty i czasu ---
@@ -621,6 +630,139 @@ document.addEventListener('DOMContentLoaded', () => {
       renderCategoriesList();
       await saveData();
     }
+  }
+
+  // --- Podsumowanie godzin (miesiąc lub dowolny zakres od–do) ---
+
+  function openSummaryModal() {
+    // Domyślnie miesiąc, w którym wypada czwartek oglądanego tygodnia
+    const ref = new Date(currentMonday);
+    ref.setDate(ref.getDate() + 3);
+    document.getElementById('summaryMonth').value = formatDateISO(ref).slice(0, 7);
+    applySummaryMonth();
+    summaryModal.style.display = 'flex';
+  }
+
+  // Ustawia pola Od/Do na pierwszy i ostatni dzień wybranego miesiąca
+  function applySummaryMonth() {
+    const value = document.getElementById('summaryMonth').value;
+    if (!value) return;
+    const [y, m] = value.split('-').map(Number);
+    document.getElementById('summaryFrom').value = formatDateISO(new Date(y, m - 1, 1));
+    document.getElementById('summaryTo').value = formatDateISO(new Date(y, m, 0));
+    renderMonthSummary();
+  }
+
+  // Ręczna zmiana zakresu – pole miesiąca przestaje odpowiadać zakresowi
+  function handleSummaryRangeChange() {
+    const from = document.getElementById('summaryFrom').value;
+    const to = document.getElementById('summaryTo').value;
+    const monthInput = document.getElementById('summaryMonth');
+    const isFullMonth = from && to && from.endsWith('-01') &&
+      to === formatDateISO(new Date(Number(from.slice(0, 4)), Number(from.slice(5, 7)), 0));
+    monthInput.value = isFullMonth ? from.slice(0, 7) : '';
+    renderMonthSummary();
+  }
+
+  function closeSummaryModal() {
+    summaryModal.style.display = 'none';
+  }
+
+  function shiftSummaryMonth(direction) {
+    const input = document.getElementById('summaryMonth');
+    const base = input.value || document.getElementById('summaryFrom').value.slice(0, 7) || formatDateISO(new Date()).slice(0, 7);
+    const [y, m] = base.split('-').map(Number);
+    const d = new Date(y, m - 1 + direction, 1);
+    input.value = formatDateISO(d).slice(0, 7);
+    applySummaryMonth();
+  }
+
+  function formatHours(ms) {
+    const totalMin = Math.round(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return m ? `${h} h ${m} min` : `${h} h`;
+  }
+
+  // Sumuje czas wpisów (przyciętych do granic zakresu) per kategoria i per nazwa wpisu
+  function computeRangeSummary(rangeStart, rangeEnd) {
+    const byCategory = {};
+    let total = 0;
+
+    events.forEach(evt => {
+      const start = new Date(`${evt.startDate}T${evt.startTime}`);
+      const end = new Date(`${evt.endDate}T${evt.endTime}`);
+      const ms = Math.min(end, rangeEnd) - Math.max(start, rangeStart);
+      if (!(ms > 0)) return;
+
+      const catId = evt.categoryId || 'none';
+      if (!byCategory[catId]) byCategory[catId] = { ms: 0, count: 0, titles: {} };
+      const bucket = byCategory[catId];
+      bucket.ms += ms;
+      bucket.count += 1;
+      bucket.titles[evt.title] = (bucket.titles[evt.title] || 0) + ms;
+      total += ms;
+    });
+
+    return { byCategory, total };
+  }
+
+  function renderMonthSummary() {
+    const container = document.getElementById('summaryContainer');
+    const from = document.getElementById('summaryFrom').value;
+    const to = document.getElementById('summaryTo').value;
+    container.innerHTML = '';
+    if (!from || !to) return;
+
+    if (to < from) {
+      container.innerHTML = '<p class="modal-desc">Data „Do” musi być taka sama lub późniejsza niż „Od”.</p>';
+      return;
+    }
+
+    // Zakres obejmuje cały dzień „Do” – koniec to północ dnia następnego
+    const rangeStart = new Date(`${from}T00:00`);
+    const rangeEnd = new Date(`${to}T00:00`);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+
+    const { byCategory, total } = computeRangeSummary(rangeStart, rangeEnd);
+    const catIds = Object.keys(byCategory).sort((a, b) => byCategory[b].ms - byCategory[a].ms);
+
+    if (catIds.length === 0) {
+      container.innerHTML = '<p class="modal-desc">Brak wpisów w wybranym okresie.</p>';
+      return;
+    }
+
+    catIds.forEach(catId => {
+      const data = byCategory[catId];
+      const cat = categories.find(c => c.id === catId);
+      const name = cat ? cat.name : 'Bez kategorii';
+      const color = cat ? cat.color : '#64748b';
+
+      const titles = Object.entries(data.titles).sort((a, b) => b[1] - a[1]);
+      const item = document.createElement('div');
+      item.className = 'summary-item';
+      item.innerHTML = `
+        <div class="summary-row">
+          <div class="category-pill">
+            <div class="color-dot" style="background-color: ${color};"></div>
+            <span>${name}</span>
+          </div>
+          <span class="summary-hours">${formatHours(data.ms)}</span>
+        </div>
+        ${titles.length > 1 ? titles.map(([title, ms]) => `
+          <div class="summary-row summary-sub">
+            <span>${title}</span>
+            <span>${formatHours(ms)}</span>
+          </div>
+        `).join('') : ''}
+      `;
+      container.appendChild(item);
+    });
+
+    const totalEl = document.createElement('div');
+    totalEl.className = 'summary-row summary-total';
+    totalEl.innerHTML = `<span>Razem</span><span class="summary-hours">${formatHours(total)}</span>`;
+    container.appendChild(totalEl);
   }
 
   // --- Obsługa Uwierzytelniania ---

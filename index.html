@@ -34,6 +34,7 @@
       <div class="sync-status" id="syncStatus" role="status" aria-live="polite">🔄 Łączenie...</div>
 
       <button type="button" class="btn" id="openCategoriesBtn">🏷️ Kategorie</button>
+      <button type="button" class="btn" id="openSummaryBtn">📊 Podsumowanie godzin</button>
       <button type="button" class="btn btn-export" id="openExportBtn">📸 Pobierz PNG</button>
       <button type="button" class="btn btn-auth" id="openAuthBtn">🔑 Klucze / Wyloguj</button>
       <button type="button" class="btn btn-primary" id="openAddModalBtn">+ Dodaj wpis</button>
@@ -147,6 +148,38 @@
           <button type="submit" class="btn btn-primary">Zapisz</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Podsumowanie godzin w miesiącu -->
+  <div class="modal-backdrop" id="summaryModal" role="dialog" aria-modal="true" aria-labelledby="summaryModalTitle">
+    <div class="modal">
+      <h2 id="summaryModalTitle">Podsumowanie godzin</h2>
+
+      <div class="form-row summary-nav">
+        <button type="button" class="btn" id="summaryPrevBtn">◀</button>
+        <div class="form-group flex-wide">
+          <input type="month" id="summaryMonth" aria-label="Miesiąc">
+        </div>
+        <button type="button" class="btn" id="summaryNextBtn">▶</button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="summaryFrom">Od</label>
+          <input type="date" id="summaryFrom">
+        </div>
+        <div class="form-group">
+          <label for="summaryTo">Do (włącznie)</label>
+          <input type="date" id="summaryTo">
+        </div>
+      </div>
+
+      <div class="summary-list" id="summaryContainer"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn" id="closeSummaryBtn">Zamknij</button>
+      </div>
     </div>
   </div>
 
