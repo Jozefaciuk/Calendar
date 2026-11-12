@@ -50,7 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('openExportBtn').addEventListener('click', openExportModal);
     document.getElementById('closeExportBtn').addEventListener('click', closeExportModal);
-    document.getElementById('startExportBtn').addEventListener('click', executeExportPNG);
+    document.getElementById('startExportBtn').addEventListener('click', () => {
+      if (document.getElementById('exportMode').value === 'month') executeMonthExportPNG();
+      else executeExportPNG();
+    });
+    document.getElementById('exportMode').addEventListener('change', syncExportModeUI);
 
     document.getElementById('openAddModalBtn').addEventListener('click', openAddModal);
     document.getElementById('closeEventModalBtn').addEventListener('click', closeEventModal);
@@ -403,7 +407,155 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function openExportModal() {
     document.getElementById('exportTargetDate').value = formatDateISO(currentMonday);
+    // Domyślnie miesiąc, w którym wypada czwartek oglądanego tygodnia
+    const ref = new Date(currentMonday);
+    ref.setDate(ref.getDate() + 3);
+    document.getElementById('exportTargetMonth').value = formatDateISO(ref).slice(0, 7);
+    syncExportModeUI();
     exportModal.style.display = 'flex';
+  }
+
+  function syncExportModeUI() {
+    const isMonth = document.getElementById('exportMode').value === 'month';
+    document.getElementById('exportWeekGroup').style.display = isMonth ? 'none' : '';
+    document.getElementById('exportMonthGroup').style.display = isMonth ? '' : 'none';
+  }
+
+  // --- Eksport widoku miesięcznego (kafelki jak w Outlooku) ---
+
+  const MONTH_NAMES = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
+    'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'];
+  const SHORT_DAY_NAMES = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'];
+
+  function escapeHTML(str) {
+    return String(str ?? '').replace(/[&<>"']/g, ch => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+    ));
+  }
+
+  function buildMonthGridHTML(year, monthIndex) {
+    const todayISO = formatDateISO(new Date());
+    const firstOfMonth = new Date(year, monthIndex, 1);
+    const lastOfMonth = new Date(year, monthIndex + 1, 0);
+    const gridStart = getMonday(firstOfMonth);
+    const gridEnd = new Date(lastOfMonth);
+    gridEnd.setDate(gridEnd.getDate() + (7 - (gridEnd.getDay() || 7)));
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'month-grid';
+
+    SHORT_DAY_NAMES.forEach((name, i) => {
+      const head = document.createElement('div');
+      head.className = `month-head ${i >= 5 ? 'is-weekend' : ''}`;
+      head.innerText = DAY_NAMES[i];
+      wrapper.appendChild(head);
+    });
+
+    for (let d = new Date(gridStart); d <= gridEnd; d.setDate(d.getDate() + 1)) {
+      const iso = formatDateISO(d);
+      const isOtherMonth = d.getMonth() !== monthIndex;
+      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+      const isToday = iso === todayISO;
+
+      // Pomija puste wycinki (np. wpis kończący się dokładnie o 00:00 następnego dnia)
+      const rawSlices = getSlicesForDay(iso).filter(s => s.end === '24:00' || s.start < s.end);
+      const slices = processDayEventOverlaps(rawSlices)
+        .sort((a, b) => a.startM - b.startM || b.endM - a.endM);
+
+      const dayMinutes = slices.reduce((sum, s) => sum + Math.max(s.endM - s.startM, 0), 0);
+      const dayHours = dayMinutes ? formatHours(dayMinutes * 60000) : '';
+
+      const tile = document.createElement('div');
+      tile.className = `month-tile ${isOtherMonth ? 'is-other' : ''} ${isWeekend ? 'is-weekend' : ''} ${isToday ? 'is-today' : ''}`;
+
+      const dayLabel = d.getDate() === 1 || (isOtherMonth && d.getTime() === gridStart.getTime())
+        ? `${d.getDate()} ${MONTH_NAMES[d.getMonth()].slice(0, 3).toLowerCase()}`
+        : d.getDate();
+
+      tile.innerHTML = `
+        <div class="month-tile-head">
+          <span class="month-day-num">${dayLabel}</span>
+          ${dayHours ? `<span class="month-day-total">${dayHours}</span>` : ''}
+        </div>
+        <div class="month-events">
+          ${slices.map(s => {
+            const cat = categories.find(c => c.id === s.categoryId);
+            const color = cat ? cat.color : (s.color || '#3b82f6');
+            return `
+              <div class="month-event" style="--evt-color:${color};">
+                <span class="month-event-time">${s.start}–${s.end}</span>
+                <span class="month-event-title">${s.isMultiDay ? '↔ ' : ''}${s.hasConflict && s.isSmallerOverlap ? '⚠️ ' : ''}${escapeHTML(s.title)}</span>
+              </div>`;
+          }).join('')}
+        </div>
+      `;
+      wrapper.appendChild(tile);
+    }
+
+    return wrapper;
+  }
+
+  async function executeMonthExportPNG() {
+    const monthVal = document.getElementById('exportTargetMonth').value;
+    if (!monthVal) {
+      alert('Wybierz miesiąc.');
+      return;
+    }
+
+    const [y, m] = monthVal.split('-').map(Number);
+    const monthTitle = `${MONTH_NAMES[m - 1]} ${y}`;
+
+    const btn = document.getElementById('startExportBtn');
+    btn.innerText = '⏳ Generowanie PNG...';
+    btn.disabled = true;
+
+    // Suma godzin w miesiącu
+    const { total } = computeRangeSummary(new Date(y, m - 1, 1), new Date(y, m, 1));
+
+    const container = document.getElementById('exportOffscreenContainer');
+    container.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid #1f314d; padding-bottom: 12px;">
+        <div style="display:flex; align-items:center; gap: 12px;">
+          <div style="background:#10b981; color:#fff; width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:18px;">✓</div>
+          <div>
+            <h2 style="font-size: 22px; color: #f1f5f9; margin: 0;">${monthTitle}</h2>
+            <p style="color: #94a3b8; font-size: 13px; margin: 3px 0 0 0;">Razem w miesiącu: ${formatHours(total)}</p>
+          </div>
+        </div>
+        <div style="display:flex; gap: 14px; align-items:center; flex-wrap: wrap;">
+          ${categories.map(c => `
+            <div style="display:flex; align-items:center; gap:6px; font-size:12px; color:#cbd5e1;">
+              <div style="width:12px; height:12px; border-radius:3px; background:${c.color};"></div>
+              <span>${escapeHTML(c.name)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    container.appendChild(buildMonthGridHTML(y, m - 1));
+
+    try {
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#0b131f',
+        logging: false
+      });
+
+      const link = document.createElement('a');
+      link.download = `Plan_Miesiaca_${monthVal}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      closeExportModal();
+    } catch (err) {
+      console.error('Błąd eksportu PNG:', err);
+      alert('Wystąpił błąd podczas generowania pliku PNG.');
+    } finally {
+      container.innerHTML = '';
+      btn.innerText = '📸 Pobierz plik PNG';
+      btn.disabled = false;
+    }
   }
 
   function closeExportModal() {

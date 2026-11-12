@@ -80,14 +80,27 @@
   <!-- MODAL: Eksport grafiki PNG -->
   <div class="modal-backdrop" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
     <div class="modal">
-      <h2 id="exportModalTitle">Pobierz grafikę tygodnia (PNG)</h2>
+      <h2 id="exportModalTitle">Pobierz grafikę (PNG)</h2>
       <p class="modal-desc">
         Generuje panoramiczny obraz w układzie stacjonarnym PC (1920px), nawet jeśli pobierasz go z telefonu.
       </p>
 
       <div class="form-group">
+        <label for="exportMode">Widok</label>
+        <select id="exportMode">
+          <option value="week">Tydzień (oś 24h)</option>
+          <option value="month">Miesiąc (kafelki jak w Outlooku)</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="exportWeekGroup">
         <label for="exportTargetDate">Wybierz dzień z tygodnia do pobrania:</label>
         <input type="date" id="exportTargetDate">
+      </div>
+
+      <div class="form-group" id="exportMonthGroup" style="display:none;">
+        <label for="exportTargetMonth">Wybierz miesiąc do pobrania:</label>
+        <input type="month" id="exportTargetMonth">
       </div>
 
       <div class="modal-actions">
