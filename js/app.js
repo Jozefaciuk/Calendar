@@ -16,6 +16,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let events = [];
   let categories = JSON.parse(localStorage.getItem('my_weekly_categories')) || defaultCategories;
   let currentMonday = getMonday(new Date());
+  let currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  let viewMode = 'week';
+  try { if (localStorage.getItem('my_view_mode') === 'month') viewMode = 'month'; } catch (e) { /* ignoruj */ }
 
   // Elementy DOM
   const grid = document.getElementById('grid');
@@ -41,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function initEventListeners() {
     document.getElementById('prevWeekBtn').addEventListener('click', () => changeWeek(-1));
     document.getElementById('todayBtn').addEventListener('click', goToToday);
+    document.getElementById('viewToggleBtn').addEventListener('click', toggleViewMode);
     document.getElementById('nextWeekBtn').addEventListener('click', () => changeWeek(1));
 
     document.getElementById('openAuthBtn').addEventListener('click', openAuthModal);
@@ -111,12 +115,45 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function changeWeek(direction) {
-    currentMonday.setDate(currentMonday.getDate() + (direction * 7));
+    if (viewMode === 'month') {
+      currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + direction, 1);
+    } else {
+      currentMonday.setDate(currentMonday.getDate() + (direction * 7));
+    }
     render();
   }
 
   function goToToday() {
-    currentMonday = getMonday(new Date());
+    const now = new Date();
+    currentMonday = getMonday(now);
+    currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    render();
+  }
+
+  // Miesiąc, w którym wypada czwartek oglądanego tygodnia
+  function monthOfWeek(monday) {
+    const ref = new Date(monday);
+    ref.setDate(ref.getDate() + 3);
+    return new Date(ref.getFullYear(), ref.getMonth(), 1);
+  }
+
+  // Aktualnie oglądany miesiąc (niezależnie od trybu widoku)
+  function getViewedMonth() {
+    return viewMode === 'month' ? currentMonth : monthOfWeek(currentMonday);
+  }
+
+  function toggleViewMode() {
+    if (viewMode === 'week') {
+      currentMonth = monthOfWeek(currentMonday);
+      viewMode = 'month';
+    } else {
+      // Przejście do tygodnia: dzisiejszy tydzień, jeśli dziś jest w oglądanym miesiącu, inaczej pierwszy tydzień miesiąca
+      const now = new Date();
+      const sameMonth = now.getFullYear() === currentMonth.getFullYear() && now.getMonth() === currentMonth.getMonth();
+      currentMonday = getMonday(sameMonth ? now : currentMonth);
+      viewMode = 'week';
+    }
+    try { localStorage.setItem('my_view_mode', viewMode); } catch (e) { /* ignoruj */ }
     render();
   }
 
@@ -392,10 +429,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function render() {
     grid.innerHTML = '';
+    updateCategoryDropdown();
+
+    const isMonth = viewMode === 'month';
+    document.getElementById('viewToggleBtn').innerText = isMonth ? '📅 Widok tygodnia' : '🗓️ Widok miesiąca';
+    document.getElementById('prevWeekBtn').innerText = isMonth ? '◀ Poprzedni miesiąc' : '◀ Poprzedni';
+    document.getElementById('nextWeekBtn').innerText = isMonth ? 'Następny miesiąc ▶' : 'Następny ▶';
+    document.querySelector('.brand-title').innerText = isMonth ? 'Planer Miesiąca' : 'Planer Tygodnia (24h)';
+
+    if (isMonth) {
+      grid.className = 'month-grid month-grid-live';
+      currentWeekRange.innerText = `Miesiąc: ${MONTH_NAMES[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
+      const monthGrid = buildMonthGridHTML(currentMonth.getFullYear(), currentMonth.getMonth(), true);
+      while (monthGrid.children.length > 0) {
+        grid.appendChild(monthGrid.children[0]);
+      }
+      return;
+    }
+
+    grid.className = 'schedule-grid';
     const daysOfWeek = getDaysOfWeek(currentMonday);
     currentWeekRange.innerText = `Tydzień: ${daysOfWeek[0].dateStr} – ${daysOfWeek[6].dateStr}`;
-
-    updateCategoryDropdown();
 
     const renderedGrid = buildGridHTML(currentMonday, false);
     while (renderedGrid.children.length > 0) {
@@ -406,11 +460,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Obsługa Eksportu PNG ---
 
   function openExportModal() {
-    document.getElementById('exportTargetDate').value = formatDateISO(currentMonday);
-    // Domyślnie miesiąc, w którym wypada czwartek oglądanego tygodnia
-    const ref = new Date(currentMonday);
-    ref.setDate(ref.getDate() + 3);
-    document.getElementById('exportTargetMonth').value = formatDateISO(ref).slice(0, 7);
+    document.getElementById('exportTargetDate').value = formatDateISO(
+      viewMode === 'month' ? getMonday(currentMonth) : currentMonday);
+    document.getElementById('exportTargetMonth').value = formatDateISO(getViewedMonth()).slice(0, 7);
+    document.getElementById('exportMode').value = viewMode;
     syncExportModeUI();
     exportModal.style.display = 'flex';
   }
@@ -433,7 +486,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ));
   }
 
-  function buildMonthGridHTML(year, monthIndex) {
+  function buildMonthGridHTML(year, monthIndex, interactive = false) {
     const todayISO = formatDateISO(new Date());
     const firstOfMonth = new Date(year, monthIndex, 1);
     const lastOfMonth = new Date(year, monthIndex + 1, 0);
@@ -482,13 +535,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const cat = categories.find(c => c.id === s.categoryId);
             const color = cat ? cat.color : (s.color || '#3b82f6');
             return `
-              <div class="month-event" style="--evt-color:${color};">
+              <div class="month-event" style="--evt-color:${color};" data-event-id="${escapeHTML(s.id)}"
+                title="${escapeHTML(`${s.title} (${s.rawEvent.startDate} ${s.rawEvent.startTime} – ${s.rawEvent.endDate} ${s.rawEvent.endTime})${s.info ? '\n' + s.info : ''}`)}">
                 <span class="month-event-time">${s.start}–${s.end}</span>
                 <span class="month-event-title">${s.isMultiDay ? '↔ ' : ''}${s.hasConflict && s.isSmallerOverlap ? '⚠️ ' : ''}${escapeHTML(s.title)}</span>
               </div>`;
           }).join('')}
         </div>
       `;
+
+      if (interactive) {
+        // Klik w wpis = edycja, klik w pusty obszar kafelka = nowy wpis na ten dzień
+        tile.querySelectorAll('.month-event').forEach(el => {
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openEditModal(el.dataset.eventId);
+          });
+        });
+        tile.addEventListener('click', () => openAddModal(iso));
+      }
+
       wrapper.appendChild(tile);
     }
 
@@ -633,8 +699,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Obsługa Zdarzeń (CRUD) ---
 
-  function openAddModal() {
-    const todayISO = formatDateISO(new Date());
+  function openAddModal(presetDate) {
+    const todayISO = typeof presetDate === 'string' ? presetDate : formatDateISO(new Date());
     document.getElementById('eventModalTitle').innerText = 'Dodaj wpis';
     document.getElementById('eventId').value = '';
     document.getElementById('eventTitle').value = '';
@@ -788,9 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function openSummaryModal() {
     // Domyślnie miesiąc, w którym wypada czwartek oglądanego tygodnia
-    const ref = new Date(currentMonday);
-    ref.setDate(ref.getDate() + 3);
-    document.getElementById('summaryMonth').value = formatDateISO(ref).slice(0, 7);
+    document.getElementById('summaryMonth').value = formatDateISO(getViewedMonth()).slice(0, 7);
     applySummaryMonth();
     summaryModal.style.display = 'flex';
   }

@@ -647,3 +647,19 @@ input:focus, select:focus {
   font-weight: 600;
   word-break: break-word;
 }
+
+/* --- Widok miesięczny w aplikacji --- */
+.month-grid-live {
+  border: none;
+  border-radius: 0;
+  min-width: 900px;
+  width: 100%;
+}
+.month-grid-live .month-tile {
+  min-height: 120px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.month-grid-live .month-tile:hover { background: #16243a; }
+.month-grid-live .month-event { cursor: pointer; }
+.month-grid-live .month-event:hover { filter: brightness(1.25); }
