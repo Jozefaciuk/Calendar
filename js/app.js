@@ -18,7 +18,14 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentMonday = getMonday(new Date());
   let currentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   let viewMode = 'week';
-  try { if (localStorage.getItem('my_view_mode') === 'month') viewMode = 'month'; } catch (e) { /* ignoruj */ }
+  try {
+    const saved = localStorage.getItem('my_view_mode');
+    if (saved === 'month1' || saved === 'month2') viewMode = saved;
+    else if (saved === 'month') viewMode = 'month1';
+  } catch (e) { /* ignoruj */ }
+  // Oba widoki miesiąca mieszczą się na jednym ekranie:
+  // Miesiąc 1 = zawsze cienkie wpisy w jednej linii, Miesiąc 2 = dwie linie, a jedna tylko gdy brakuje miejsca
+  const isMonthView = () => viewMode !== 'week';
 
   // Elementy DOM
   const grid = document.getElementById('grid');
@@ -44,7 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function initEventListeners() {
     document.getElementById('prevWeekBtn').addEventListener('click', () => changeWeek(-1));
     document.getElementById('todayBtn').addEventListener('click', goToToday);
-    document.getElementById('viewToggleBtn').addEventListener('click', toggleViewMode);
+    document.querySelectorAll('.view-switch [data-view]').forEach(b =>
+      b.addEventListener('click', () => setViewMode(b.dataset.view)));
     document.getElementById('nextWeekBtn').addEventListener('click', () => changeWeek(1));
 
     document.getElementById('openAuthBtn').addEventListener('click', openAuthModal);
@@ -55,8 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('openExportBtn').addEventListener('click', openExportModal);
     document.getElementById('closeExportBtn').addEventListener('click', closeExportModal);
     document.getElementById('startExportBtn').addEventListener('click', () => {
-      if (document.getElementById('exportMode').value === 'month') executeMonthExportPNG();
-      else executeExportPNG();
+      const mode = document.getElementById('exportMode').value;
+      if (mode === 'week') executeExportPNG();
+      else executeMonthExportPNG(mode);
     });
     document.getElementById('exportMode').addEventListener('change', syncExportModeUI);
 
@@ -115,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function changeWeek(direction) {
-    if (viewMode === 'month') {
+    if (isMonthView()) {
       currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + direction, 1);
     } else {
       currentMonday.setDate(currentMonday.getDate() + (direction * 7));
@@ -139,20 +148,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Aktualnie oglądany miesiąc (niezależnie od trybu widoku)
   function getViewedMonth() {
-    return viewMode === 'month' ? currentMonth : monthOfWeek(currentMonday);
+    return isMonthView() ? currentMonth : monthOfWeek(currentMonday);
   }
 
-  function toggleViewMode() {
+  // Kafelki, w których wpisy dwuliniowe się nie mieszczą, przechodzą na zwarty układ (jedna linia)
+  // W eksporcie PNG nie da się przewijać, więc nadmiarowe wpisy chowamy i pokazujemy „+N więcej”
+  function fitMonthTiles(root = grid, forExport = false) {
+    if (root === grid && !isMonthView()) return;
+    const thin = Boolean(root.querySelector('.month-thin')) || root.classList.contains('month-thin');
+    const overflows = list => list.scrollHeight > list.clientHeight + 1;
+    root.querySelectorAll('.month-tile').forEach(tile => {
+      tile.classList.toggle('is-compact', thin);
+      const list = tile.querySelector('.month-events');
+      if (!list || !overflows(list)) return;
+      tile.classList.add('is-compact');
+
+      if (forExport && overflows(list)) {
+        const items = [...list.querySelectorAll('.month-event')];
+        const more = document.createElement('div');
+        more.className = 'month-more';
+        list.appendChild(more);
+        let hidden = 0;
+        while (overflows(list) && hidden < items.length) {
+          items[items.length - 1 - hidden].style.display = 'none';
+          hidden++;
+          more.innerText = `+${hidden} więcej`;
+        }
+      }
+    });
+  }
+
+  // Przelicz przy każdej zmianie faktycznego rozmiaru siatki (okno, pasek przeglądarki, czcionki)
+  let fitFrame = null;
+  const scheduleFit = () => {
+    cancelAnimationFrame(fitFrame);
+    fitFrame = requestAnimationFrame(fitMonthTiles);
+  };
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(scheduleFit).observe(grid);
+  } else {
+    window.addEventListener('resize', scheduleFit);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleFit);
+
+  function setViewMode(mode) {
+    if (mode === viewMode) return;
     if (viewMode === 'week') {
       currentMonth = monthOfWeek(currentMonday);
-      viewMode = 'month';
-    } else {
+    } else if (mode === 'week') {
       // Przejście do tygodnia: dzisiejszy tydzień, jeśli dziś jest w oglądanym miesiącu, inaczej pierwszy tydzień miesiąca
       const now = new Date();
       const sameMonth = now.getFullYear() === currentMonth.getFullYear() && now.getMonth() === currentMonth.getMonth();
       currentMonday = getMonday(sameMonth ? now : currentMonth);
-      viewMode = 'week';
     }
+    viewMode = mode;
     try { localStorage.setItem('my_view_mode', viewMode); } catch (e) { /* ignoruj */ }
     render();
   }
@@ -431,11 +480,16 @@ document.addEventListener('DOMContentLoaded', () => {
     grid.innerHTML = '';
     updateCategoryDropdown();
 
-    const isMonth = viewMode === 'month';
+    const isMonth = isMonthView();
     document.body.classList.toggle('view-month', isMonth);
+    document.body.classList.toggle('view-month-fit', isMonth);
+    document.querySelectorAll('.view-switch [data-view]').forEach(b => {
+      const active = b.dataset.view === viewMode;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-pressed', String(active));
+    });
     // W widoku miesiąca skrócone etykiety, żeby nagłówek mieścił się w jednej linii
     const labels = {
-      viewToggleBtn: ['🗓️ Widok miesiąca', '📅 Tydzień'],
       prevWeekBtn: ['◀ Poprzedni', '◀'],
       nextWeekBtn: ['Następny ▶', '▶'],
       openSummaryBtn: ['📊 Podsumowanie godzin', '📊 Godziny'],
@@ -451,12 +505,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('.brand-title').innerText = isMonth ? 'Planer Miesiąca' : 'Planer Tygodnia (24h)';
 
     if (isMonth) {
-      grid.className = 'month-grid month-grid-live';
+      grid.className = 'month-grid month-grid-live month-fit' + (viewMode === 'month1' ? ' month-thin' : '');
       currentWeekRange.innerText = `Miesiąc: ${MONTH_NAMES[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
       const monthGrid = buildMonthGridHTML(currentMonth.getFullYear(), currentMonth.getMonth(), true);
       while (monthGrid.children.length > 0) {
         grid.appendChild(monthGrid.children[0]);
       }
+      fitMonthTiles();
       return;
     }
 
@@ -474,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function openExportModal() {
     document.getElementById('exportTargetDate').value = formatDateISO(
-      viewMode === 'month' ? getMonday(currentMonth) : currentMonday);
+      isMonthView() ? getMonday(currentMonth) : currentMonday);
     document.getElementById('exportTargetMonth').value = formatDateISO(getViewedMonth()).slice(0, 7);
     document.getElementById('exportMode').value = viewMode;
     syncExportModeUI();
@@ -482,7 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function syncExportModeUI() {
-    const isMonth = document.getElementById('exportMode').value === 'month';
+    const isMonth = document.getElementById('exportMode').value !== 'week';
     document.getElementById('exportWeekGroup').style.display = isMonth ? 'none' : '';
     document.getElementById('exportMonthGroup').style.display = isMonth ? '' : 'none';
   }
@@ -584,7 +639,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return wrapper;
   }
 
-  async function executeMonthExportPNG() {
+  async function executeMonthExportPNG(variant = 'month1') {
     const monthVal = document.getElementById('exportTargetMonth').value;
     if (!monthVal) {
       alert('Wybierz miesiąc.');
@@ -621,7 +676,13 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
     `;
-    container.appendChild(buildMonthGridHTML(y, m - 1));
+    const monthGrid = buildMonthGridHTML(y, m - 1);
+    // Oba widoki miesiąca: dokładnie jeden ekran 16:9 (1920×1080)
+    container.classList.add('export-fit');
+    monthGrid.classList.add('month-fit');
+    if (variant === 'month1') monthGrid.classList.add('month-thin');
+    container.appendChild(monthGrid);
+    fitMonthTiles(container, true);
 
     try {
       const canvas = await html2canvas(container, {
@@ -632,7 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       const link = document.createElement('a');
-      link.download = `Plan_Miesiaca_${monthVal}.png`;
+      link.download = `Plan_Miesiaca_${variant === 'month1' ? '1' : '2'}_${monthVal}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
 
@@ -715,6 +776,7 @@ document.addEventListener('DOMContentLoaded', () => {
       alert('Wystąpił błąd podczas generowania pliku PNG.');
     } finally {
       container.innerHTML = '';
+      container.classList.remove('export-fit');
       btn.innerText = '📸 Pobierz plik PNG';
       btn.disabled = false;
     }

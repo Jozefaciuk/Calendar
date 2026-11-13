@@ -602,7 +602,8 @@ input:focus, select:focus {
 .month-tile.is-other { background: #080e18; }
 .month-tile.is-other .month-tile-head,
 .month-tile.is-other .month-events { opacity: 0.35; }
-.month-tile.is-today { box-shadow: inset 0 0 0 3px #10b981; }
+.month-tile.is-today { border: 3px solid #10b981; padding: 6px; }
+.month-fit .month-tile.is-today { padding: 4px 6px; }
 
 .month-tile-head {
   display: flex;
@@ -676,14 +677,27 @@ input:focus, select:focus {
 .month-grid-live .month-event { cursor: pointer; }
 .month-grid-live .month-event:hover { filter: brightness(1.15); }
 
-/* --- Widok miesiąca: cała siatka na jednym ekranie (laptop 16:9 / 16:10) --- */
+/* --- Przełącznik widoków: Tydzień / Miesiąc 1 / Miesiąc 2 --- */
+.view-switch {
+  display: inline-flex;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.view-switch .btn {
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid var(--border-color);
+}
+.view-switch .btn:last-child { border-right: none; }
+.view-switch .btn.is-active {
+  background: #10b981;
+  color: #04170f;
+  font-weight: 700;
+}
+
+/* --- Widoki miesiąca: zwarty nagłówek (Miesiąc 1 i 2) --- */
 @media (min-width: 900px) {
-  body.view-month {
-    height: 100vh;
-    min-height: 0;
-    padding: 10px 16px;
-    overflow: hidden;
-  }
   body.view-month .app-header {
     margin-bottom: 8px;
     flex-wrap: nowrap;
@@ -698,49 +712,87 @@ input:focus, select:focus {
     padding: 5px 10px;
     font-size: 12px;
   }
-  body.view-month .schedule-wrapper {
+}
+
+/* --- Miesiąc 2: kafelki o stałej wysokości (aplikacja i eksport 1920×1080) --- */
+.month-fit .month-head { padding: 7px 12px; }
+.month-fit .month-tile {
+  padding: 6px 8px;
+  gap: 5px;
+  overflow: hidden;
+}
+.month-fit .month-events {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+}
+/* Kafelek z wieloma wpisami: wpisy w jednej linii (godzina + nazwa) */
+.month-fit .month-tile.is-compact .month-events { gap: 3px; }
+.month-fit .month-tile.is-compact .month-event {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.month-fit .month-tile.is-compact .month-event-time { flex-shrink: 0; }
+.month-fit .month-tile.is-compact .month-event-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.month-more {
+  font-size: 12px;
+  font-weight: 700;
+  color: #cbd5e1;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+/* Miesiąc 2 w aplikacji: cała siatka na jednym ekranie (laptop 16:9 / 16:10) */
+@media (min-width: 900px) {
+  body.view-month-fit {
+    height: 100vh;
+    min-height: 0;
+    padding: 10px 16px;
+    overflow: hidden;
+  }
+  body.view-month-fit .schedule-wrapper {
     min-height: 0;
     overflow: hidden;
     display: flex;
   }
-  body.view-month .month-grid-live {
+  body.view-month-fit .month-grid-live {
     flex: 1;
     height: 100%;
     min-width: 0;
     grid-template-rows: auto;
     grid-auto-rows: minmax(0, 1fr);
   }
-  body.view-month .month-head { padding: 6px 10px; font-size: 13px; }
-  body.view-month .month-tile {
-    padding: 4px 6px;
-    gap: 3px;
-    overflow: hidden;
-  }
-  body.view-month .month-tile-head { min-height: 22px; }
-  body.view-month .month-day-num { font-size: 15px; line-height: 22px; }
-  body.view-month .month-day-total { font-size: 11px; padding: 1px 7px; }
-  body.view-month .month-events {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    gap: 3px;
-    scrollbar-width: thin;
-    scrollbar-color: #475569 transparent;
-  }
-  /* Wpis w jednej linii: godzina + nazwa */
-  body.view-month .month-event {
-    flex-direction: row;
-    align-items: baseline;
-    gap: 6px;
-    padding: 2px 6px;
-    font-size: 12.5px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  body.view-month .month-event-time { flex-shrink: 0; font-size: 11.5px; }
-  body.view-month .month-event-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-  }
 }
+
+/* Miesiąc 2 w eksporcie PNG: dokładnie 1920×1080 */
+#exportOffscreenContainer.export-fit { height: 1080px; }
+#exportOffscreenContainer.export-fit .month-fit {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: auto;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+/* --- Miesiąc 1: cieńszy, zwarty wariant (wszystkie wpisy w jednej linii) --- */
+.month-thin .month-head { padding: 6px 10px; font-size: 13px; }
+.month-fit.month-thin .month-tile { padding: 4px 6px; gap: 3px; }
+.month-fit.month-thin .month-tile.is-today { padding: 2px 4px; }
+.month-thin .month-tile-head { min-height: 22px; }
+.month-thin .month-day-num { font-size: 15px; line-height: 22px; }
+.month-thin .month-tile.is-today .month-day-num { padding: 0 8px; }
+.month-thin .month-day-total { font-size: 11px; padding: 1px 7px; }
+.month-fit.month-thin .month-tile.is-compact .month-event {
+  padding: 2px 6px;
+  font-size: 12.5px;
+}
+.month-thin .month-event-time { font-size: 11.5px; }

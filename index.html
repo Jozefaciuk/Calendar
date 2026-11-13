@@ -30,7 +30,11 @@
       <button type="button" class="btn" id="prevWeekBtn">◀ Poprzedni</button>
       <button type="button" class="btn" id="todayBtn">Dzisiaj</button>
       <button type="button" class="btn" id="nextWeekBtn">Następny ▶</button>
-      <button type="button" class="btn" id="viewToggleBtn">🗓️ Widok miesiąca</button>
+      <div class="view-switch" role="group" aria-label="Widok">
+        <button type="button" class="btn" data-view="week">Tydzień</button>
+        <button type="button" class="btn" data-view="month1" title="Jeden ekran, cienkie wpisy w jednej linii">Miesiąc 1</button>
+        <button type="button" class="btn" data-view="month2" title="Jeden ekran, wpisy w dwóch liniach gdy jest miejsce">Miesiąc 2</button>
+      </div>
       
       <div class="sync-status" id="syncStatus" role="status" aria-live="polite">🔄 Łączenie...</div>
 
@@ -90,7 +94,8 @@
         <label for="exportMode">Widok</label>
         <select id="exportMode">
           <option value="week">Tydzień (oś 24h)</option>
-          <option value="month">Miesiąc (kafelki jak w Outlooku)</option>
+          <option value="month1">Miesiąc 1 – cienkie wpisy (1920×1080)</option>
+          <option value="month2">Miesiąc 2 – wpisy w dwóch liniach (1920×1080)</option>
         </select>
       </div>
 
