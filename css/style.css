@@ -796,3 +796,31 @@ input:focus, select:focus {
   font-size: 12.5px;
 }
 .month-thin .month-event-time { font-size: 11.5px; }
+
+/* --- Rozmycie dni, które już minęły (przycisk „Przeszłe”) – tylko w aplikacji, nie w PNG --- */
+.btn-toggle.is-active {
+  background: #334155;
+  border-color: #94a3b8;
+  color: #f8fafc;
+}
+#grid .month-tile .month-tile-head,
+#grid .month-tile .month-events,
+#grid .day-label,
+#grid .day-track .event {
+  transition: filter 0.2s, opacity 0.2s;
+}
+body.dim-past #grid .month-tile.is-past .month-tile-head,
+body.dim-past #grid .month-tile.is-past .month-events,
+body.dim-past #grid .day-label.is-past,
+body.dim-past #grid .day-track.is-past .event {
+  filter: blur(1.5px) grayscale(0.6);
+  opacity: 0.45;
+}
+/* Najechanie myszką na dzień chwilowo go wyostrza */
+body.dim-past #grid .month-tile.is-past:hover .month-tile-head,
+body.dim-past #grid .month-tile.is-past:hover .month-events,
+body.dim-past #grid .day-label.is-past:hover,
+body.dim-past #grid .day-track.is-past:hover .event {
+  filter: none;
+  opacity: 1;
+}

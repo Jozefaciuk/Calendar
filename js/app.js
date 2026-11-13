@@ -23,6 +23,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (saved === 'month1' || saved === 'month2') viewMode = saved;
     else if (saved === 'month') viewMode = 'month1';
   } catch (e) { /* ignoruj */ }
+  // Rozmycie dni, które już minęły (przełączane przyciskiem)
+  let dimPast = false;
+  try { dimPast = localStorage.getItem('my_dim_past') === '1'; } catch (e) { /* ignoruj */ }
   // Oba widoki miesiąca mieszczą się na jednym ekranie:
   // Miesiąc 1 = zawsze cienkie wpisy w jednej linii, Miesiąc 2 = dwie linie, a jedna tylko gdy brakuje miejsca
   const isMonthView = () => viewMode !== 'week';
@@ -53,6 +56,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('todayBtn').addEventListener('click', goToToday);
     document.querySelectorAll('.view-switch [data-view]').forEach(b =>
       b.addEventListener('click', () => setViewMode(b.dataset.view)));
+    document.getElementById('dimPastBtn').addEventListener('click', () => {
+      dimPast = !dimPast;
+      try { localStorage.setItem('my_dim_past', dimPast ? '1' : '0'); } catch (e) { /* ignoruj */ }
+      applyDimPast();
+    });
+    applyDimPast();
     document.getElementById('nextWeekBtn').addEventListener('click', () => changeWeek(1));
 
     document.getElementById('openAuthBtn').addEventListener('click', openAuthModal);
@@ -190,6 +199,14 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', scheduleFit);
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleFit);
+
+  function applyDimPast() {
+    document.body.classList.toggle('dim-past', dimPast);
+    const btn = document.getElementById('dimPastBtn');
+    btn.classList.toggle('is-active', dimPast);
+    btn.setAttribute('aria-pressed', String(dimPast));
+    btn.title = dimPast ? 'Pokaż wyraźnie dni, które już minęły' : 'Rozmyj dni, które już minęły';
+  }
 
   function setViewMode(mode) {
     if (mode === viewMode) return;
@@ -410,7 +427,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const isToday = (day.iso === todayISO);
 
       const label = document.createElement('div');
-      label.className = `day-label ${day.isWeekend ? 'is-weekend' : ''} ${isToday ? 'is-today' : ''}`;
+      const isPast = day.iso < todayISO;
+      label.className = `day-label ${day.isWeekend ? 'is-weekend' : ''} ${isToday ? 'is-today' : ''} ${isPast ? 'is-past' : ''}`;
       label.innerHTML = `
         <span class="day-name">${day.name}</span>
         <span class="day-date">${day.dateStr}</span>
@@ -420,7 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
       gridWrapper.appendChild(label);
 
       const track = document.createElement('div');
-      track.className = `day-track ${day.isWeekend ? 'is-weekend' : ''} ${isToday ? 'is-today' : ''}`;
+      track.className = `day-track ${day.isWeekend ? 'is-weekend' : ''} ${isToday ? 'is-today' : ''} ${isPast ? 'is-past' : ''}`;
 
       const trackGrid = document.createElement('div');
       trackGrid.className = 'track-grid';
@@ -527,6 +545,71 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Obsługa Eksportu PNG ---
 
+  // html2canvas nie obsługuje CSS filter, więc rozmycie przeszłych dni nakładamy na gotowy obraz:
+  // rozmycie (pomniejszenie i powiększenie), wyszarzenie i przygaszenie – jak w aplikacji
+  function blurPastOnCanvas(canvas, container, scale) {
+    const ctx = canvas.getContext('2d');
+    const base = container.getBoundingClientRect();
+    const targets = [
+      ...[...container.querySelectorAll('.month-tile.is-past')].map(el => ({ el, pad: -2 })),
+      ...[...container.querySelectorAll('.day-label.is-past')].map(el => ({ el, pad: -1 })),
+      ...[...container.querySelectorAll('.day-track.is-past .event')].map(el => ({ el, pad: 3 }))
+    ];
+
+    targets.forEach(({ el, pad }) => {
+      const r = el.getBoundingClientRect();
+      const x = Math.max(0, Math.round((r.left - base.left - pad) * scale));
+      const y = Math.max(0, Math.round((r.top - base.top - pad) * scale));
+      const w = Math.min(canvas.width - x, Math.round((r.width + pad * 2) * scale));
+      const h = Math.min(canvas.height - y, Math.round((r.height + pad * 2) * scale));
+      if (w < 2 || h < 2) return;
+
+      // Kolor tła (lewy górny róg obszaru) – do niego „przygaszamy” treść
+      const bg = ctx.getImageData(x, y, 1, 1).data;
+
+      // Rozmycie: prawdziwy blur, gdzie przeglądarka go obsługuje (Chrome/Edge/Firefox),
+      // w pozostałych (np. starsze Safari) pomniejszenie i powiększenie z wygładzaniem
+      const region = document.createElement('canvas');
+      region.width = w;
+      region.height = h;
+      region.getContext('2d').drawImage(canvas, x, y, w, h, 0, 0, w, h);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // html2canvas zostawia skalowanie ×scale na kontekście
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.clip();
+      if (typeof ctx.filter === 'string') {
+        ctx.filter = `blur(${2 * scale}px)`;
+        ctx.drawImage(region, x, y);
+        ctx.drawImage(region, x, y); // drugi raz, żeby brzegi nie prześwitywały
+      } else {
+        const small = document.createElement('canvas');
+        small.width = Math.max(1, Math.round(w / 10));
+        small.height = Math.max(1, Math.round(h / 10));
+        const sctx = small.getContext('2d');
+        sctx.imageSmoothingEnabled = true;
+        sctx.imageSmoothingQuality = 'high';
+        sctx.drawImage(region, 0, 0, small.width, small.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(small, 0, 0, small.width, small.height, x, y, w, h);
+      }
+      ctx.restore();
+
+      // Wyszarzenie (60%) i przygaszenie (krycie 45%)
+      const img = ctx.getImageData(x, y, w, h);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        for (let c = 0; c < 3; c++) {
+          const desat = d[i + c] * 0.4 + gray * 0.6;
+          d[i + c] = desat * 0.45 + bg[c] * 0.55;
+        }
+      }
+      ctx.putImageData(img, x, y);
+    });
+  }
+
   function openExportModal() {
     document.getElementById('exportTargetDate').value = formatDateISO(
       isMonthView() ? getMonday(currentMonth) : currentMonday);
@@ -597,7 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const dayHours = dayMinutes ? formatHours(dayMinutes * 60000) : '';
 
       const tile = document.createElement('div');
-      tile.className = `month-tile ${isOtherMonth ? 'is-other' : ''} ${isWeekend ? 'is-weekend' : ''} ${isToday ? 'is-today' : ''}`;
+      tile.className = `month-tile ${isOtherMonth ? 'is-other' : ''} ${isWeekend ? 'is-weekend' : ''} ${isToday ? 'is-today' : ''} ${iso < todayISO ? 'is-past' : ''}`;
 
       const dayLabel = d.getDate() === 1 || (isOtherMonth && d.getTime() === gridStart.getTime())
         ? `${d.getDate()} ${MONTH_NAMES[d.getMonth()].slice(0, 3).toLowerCase()}`
@@ -691,6 +774,7 @@ document.addEventListener('DOMContentLoaded', () => {
         backgroundColor: '#0b131f',
         logging: false
       });
+      if (dimPast) blurPastOnCanvas(canvas, container, 2);
 
       const link = document.createElement('a');
       link.download = `Plan_Miesiaca_${variant === 'month1' ? '1' : '2'}_${monthVal}.png`;
@@ -764,6 +848,7 @@ document.addEventListener('DOMContentLoaded', () => {
         backgroundColor: '#0b131f',
         logging: false
       });
+      if (dimPast) blurPastOnCanvas(canvas, container, 2);
 
       const link = document.createElement('a');
       link.download = `Plan_Tygodnia_${weekLabel}.png`;
