@@ -432,9 +432,22 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCategoryDropdown();
 
     const isMonth = viewMode === 'month';
-    document.getElementById('viewToggleBtn').innerText = isMonth ? '📅 Widok tygodnia' : '🗓️ Widok miesiąca';
-    document.getElementById('prevWeekBtn').innerText = isMonth ? '◀ Poprzedni miesiąc' : '◀ Poprzedni';
-    document.getElementById('nextWeekBtn').innerText = isMonth ? 'Następny miesiąc ▶' : 'Następny ▶';
+    document.body.classList.toggle('view-month', isMonth);
+    // W widoku miesiąca skrócone etykiety, żeby nagłówek mieścił się w jednej linii
+    const labels = {
+      viewToggleBtn: ['🗓️ Widok miesiąca', '📅 Tydzień'],
+      prevWeekBtn: ['◀ Poprzedni', '◀'],
+      nextWeekBtn: ['Następny ▶', '▶'],
+      openSummaryBtn: ['📊 Podsumowanie godzin', '📊 Godziny'],
+      openAuthBtn: ['🔑 Klucze / Wyloguj', '🔑 Klucze']
+    };
+    Object.entries(labels).forEach(([id, [weekLabel, monthLabel]]) => {
+      const btn = document.getElementById(id);
+      btn.innerText = isMonth ? monthLabel : weekLabel;
+      btn.title = isMonth ? weekLabel : '';
+    });
+    document.getElementById('prevWeekBtn').title = isMonth ? 'Poprzedni miesiąc' : '';
+    document.getElementById('nextWeekBtn').title = isMonth ? 'Następny miesiąc' : '';
     document.querySelector('.brand-title').innerText = isMonth ? 'Planer Miesiąca' : 'Planer Tygodnia (24h)';
 
     if (isMonth) {
@@ -479,6 +492,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const MONTH_NAMES = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
     'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'];
   const SHORT_DAY_NAMES = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'];
+
+  // Dobiera czarny lub biały tekst do koloru tła (luminancja WCAG)
+  function readableTextColor(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return '#ffffff';
+    const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const n = parseInt(m[1], 16);
+    const L = 0.2126 * lin(n >> 16 & 255) + 0.7152 * lin(n >> 8 & 255) + 0.0722 * lin(n & 255);
+    return L > 0.35 ? '#0b131f' : '#ffffff';
+  }
 
   function escapeHTML(str) {
     return String(str ?? '').replace(/[&<>"']/g, ch => (
@@ -535,7 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const cat = categories.find(c => c.id === s.categoryId);
             const color = cat ? cat.color : (s.color || '#3b82f6');
             return `
-              <div class="month-event" style="--evt-color:${color};" data-event-id="${escapeHTML(s.id)}"
+              <div class="month-event" style="background:${color}; color:${readableTextColor(color)};" data-event-id="${escapeHTML(s.id)}"
                 title="${escapeHTML(`${s.title} (${s.rawEvent.startDate} ${s.rawEvent.startTime} – ${s.rawEvent.endDate} ${s.rawEvent.endTime})${s.info ? '\n' + s.info : ''}`)}">
                 <span class="month-event-time">${s.start}–${s.end}</span>
                 <span class="month-event-title">${s.isMultiDay ? '↔ ' : ''}${s.hasConflict && s.isSmallerOverlap ? '⚠️ ' : ''}${escapeHTML(s.title)}</span>
